@@ -19,7 +19,8 @@ Delivery semantics (explicit, no stronger claim is made):
 - User-visible failures (oversize, no audio, unreadable file, busy) are
   final answers: the user is told and the update is marked done.
 """
-import asyncio, os, sys, tempfile, time
+import asyncio
+import time, os, sys, tempfile, time
 from aiohttp import web, ClientSession, FormData, ClientTimeout
 
 from converter import (video_to_mp3, ConvertError,
@@ -115,6 +116,8 @@ async def process(session, update: dict):
                     "Please try again in a minute.")
         raise FinalAnswer()
     await _jobs.acquire()
+    t0 = time.monotonic()
+    uid = update.get("update_id", -1)
     try:
         finfo = await call(session, "getFile", file_id=file_id)
         fpath = finfo["file_path"]
@@ -128,10 +131,12 @@ async def process(session, update: dict):
                 with open(src, "wb") as f:
                     async for chunk in r.content.iter_chunked(1 << 20):
                         f.write(chunk)
+            t1 = time.monotonic()
             loop = asyncio.get_running_loop()
             await asyncio.wait_for(
                 loop.run_in_executor(None, video_to_mp3, src, dst),
                 timeout=JOB_TIMEOUT)
+            t2 = time.monotonic()
             title = os.path.splitext(os.path.basename(fname))[0] or "audio"
             form = FormData()
             form.add_field("chat_id", str(chat_id))
@@ -146,6 +151,10 @@ async def process(session, update: dict):
                 data = await r.json()
             if not data.get("ok"):
                 raise ConvertError("Telegram rejected the MP3 upload")
+            t3 = time.monotonic()
+            print(f"update {uid}: timing download={t1-t0:.1f}s "
+                  f"ffmpeg={t2-t1:.1f}s upload={t3-t2:.1f}s "
+                  f"total={t3-t0:.1f}s", flush=True)
             a = (data.get("result") or {}).get("audio") or {}
             print(f"update {update.get('update_id', -1)}: sent MP3 "
                   f"file_id={a.get('file_id')} duration={a.get('duration')}s "
