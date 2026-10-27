@@ -101,6 +101,8 @@ async def process(session, update: dict):
                     "Please send a video file (max 20 MB). " + HELP)
         raise FinalAnswer()
     file_id, fsize, fname = found
+    print(f"update {update.get('update_id', -1)}: incoming video "
+          f"name={fname} size={fsize}", flush=True)
     if fsize and fsize > MAX_DOWNLOAD_BYTES:
         await reply(session, chat_id,
                     "Sorry, this video is over 20 MB. Telegram bots cannot "
@@ -144,6 +146,11 @@ async def process(session, update: dict):
                 data = await r.json()
             if not data.get("ok"):
                 raise ConvertError("Telegram rejected the MP3 upload")
+            a = (data.get("result") or {}).get("audio") or {}
+            print(f"update {update.get('update_id', -1)}: sent MP3 "
+                  f"file_id={a.get('file_id')} duration={a.get('duration')}s "
+                  f"size={a.get('file_size')} mime={a.get('mime_type')}",
+                  flush=True)
     except ConvertError as e:
         await reply(session, chat_id, f"Sorry, conversion failed: {e}")
         raise FinalAnswer()
